@@ -254,7 +254,7 @@ void main() {
 
 class Renderer:
 
-    def __init__(self, context : bpy.types.Context, is_animation = False, folder = ''):
+    def __init__(self, context : bpy.types.Context, is_animation = False):
 
         # Check if the file is saved or not, can cause errors when not saved
         if not bpy.data.is_saved:
@@ -266,7 +266,6 @@ class Renderer:
         # Set internal variables for the class
         self.scene = context.scene
         # Get the file extension
-        self.fext = os.path.splitext(bpy.context.scene.render.frame_path(preview=True))[-1]
         self.fformat = bpy.context.scene.render.image_settings.file_format.format()
         self.color_mode = bpy.context.scene.render.image_settings.color_mode
         self.is_float = True if self.fformat in ['CINEON', 'DPX', 'OPEN_EXR_MULTILAYER', 'OPEN_EXR', 'HDR'] else False
@@ -388,8 +387,6 @@ class Renderer:
 
         # Set the image name to the current time
         self.start_time = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
-        # get folder name from outside
-        self.folder_name = folder
 
         # Get initial camera and output information
         # now origin camera data not need store, and no more need to use empty as proxy
@@ -749,10 +746,6 @@ class Renderer:
 
         # Render the images and return their names
         imageList, imageList2 = self.render_images()
-        if self.is_animation:
-            image_name = f"frame{self.scene.frame_current:06d}{self.fext}"
-        else:
-            image_name = f"{os.path.splitext(bpy.path.basename(bpy.data.filepath))[0]} {self.start_time}{self.fext}"
 
         start_time = time.time()
         # Convert the rendered images to equirectangular projection image and save it to the disk
@@ -760,6 +753,7 @@ class Renderer:
             leftImage = self.cubemap_to_panorama(imageList, "Render Left")
             rightImage = self.cubemap_to_panorama(imageList2, "Render Right")
 
+            image_name = "StereoOutput"
             # If it doesn't already exist, create an image object to store the resulting render
             if not image_name in bpy.data.images.keys():
                 imageResult = bpy.data.images.new(image_name, leftImage.size[0], 2 * leftImage.size[1], float_buffer=self.is_float, alpha=self.has_alpha)
@@ -784,17 +778,24 @@ class Renderer:
                     imageResult.pixels.foreach_set(np.concatenate((img1arr, img2arr)).ravel())
             bpy.data.images.remove(leftImage)
             bpy.data.images.remove(rightImage)
-
         else:
             imageResult = self.cubemap_to_panorama(imageList, "RenderResult")
 
         save_start_time = time.time()
         if self.is_animation:
-            imageResult.filepath_raw = self.path+self.folder_name+image_name
+            imageResult.filepath_raw = bpy.context.scene.render.frame_path()
             imageResult.save()
             self.scene.frame_set(self.scene.frame_current+frame_step)
         else:
-            imageResult.filepath_raw = self.path+image_name
+            frame_no = -1234
+            output_path = bpy.context.scene.render.frame_path(frame=frame_no)
+            if bpy.context.scene.render.use_file_extension:
+                frame_and_ext = str(frame_no) + bpy.context.scene.render.file_extension
+            else:
+                frame_and_ext = str(frame_no)
+            if output_path.endswith(frame_and_ext):
+                output_path = output_path[:-len(frame_and_ext)]
+            imageResult.filepath_raw = output_path
             imageResult.save()
 
         print(f'''Saved '{imageResult.filepath_raw} float:{self.is_float} alpha:{self.has_alpha}'
